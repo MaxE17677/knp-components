@@ -8,29 +8,41 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 class SortableSubscriber implements EventSubscriberInterface
 {
     /**
-     * Lazy-load state tracker
-     * @var bool
+     * Lazy-load state tracker for request
+     * @var string
      */
     private $isLoaded = false;
+    private $subscribers = [];
 
     public function before(BeforeEvent $event): void
     {
-        // Do not lazy-load more than once
-        if ($this->isLoaded) {
+        $request = $event->getRequest();
+        $requestHash = spl_object_hash($request);
+        $disp = $event->getEventDispatcher();
+
+        // Do not lazy-load more than once per request
+        if ($requestHash === $this->isLoaded) {
             return;
         }
 
-        $disp = $event->getEventDispatcher();
+        // remove subscribers of other requests
+        foreach($this->subscribers as $subscriber){
+            $disp->removeSubscriber($subscriber);
+        }
         // hook all standard sortable subscribers
-        $request = $event->getRequest();
-        $disp->addSubscriber(new Doctrine\ORM\QuerySubscriber($request));
-        $disp->addSubscriber(new Doctrine\ODM\MongoDB\QuerySubscriber($request));
-        $disp->addSubscriber(new ElasticaQuerySubscriber($request));
-        $disp->addSubscriber(new PropelQuerySubscriber($request));
-        $disp->addSubscriber(new SolariumQuerySubscriber($request));
-        $disp->addSubscriber(new ArraySubscriber($request));
+        $this->subscribers = [
+            new Doctrine\ORM\QuerySubscriber($request),
+            new Doctrine\ODM\MongoDB\QuerySubscriber($request),
+            new ElasticaQuerySubscriber($request),
+            new PropelQuerySubscriber($request),
+            new SolariumQuerySubscriber($request),
+            new ArraySubscriber($request),
+        ];
+        foreach($this->subscribers as $subscriber){
+            $disp->addSubscriber($subscriber);
+        }
 
-        $this->isLoaded = true;
+        $this->isLoaded = $requestHash;
     }
 
     public static function getSubscribedEvents(): array
